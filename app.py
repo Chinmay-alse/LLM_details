@@ -297,6 +297,9 @@ def generate_response(question, df_info, df):
     return chat_completion.choices[0].message.content
 
 def main():
+    # Load environment variables
+    load_dotenv()
+    
     # Custom header with icon
     st.markdown('<p class="header-style">🤖 AI Model Analysis Dashboard</p>', unsafe_allow_html=True)
     
@@ -311,49 +314,56 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
+    # Check for GROQ API key
+    if not os.getenv("GROQ_API_KEY"):
+        st.error("⚠️ GROQ_API_KEY not found in environment variables. Please make sure it's set in Streamlit Cloud's secrets management.")
+        return
+
     # File upload with custom styling
     st.markdown('<p class="subheader-style">📁 Upload Data</p>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
     if uploaded_file is not None:
-        # Load and process the data
-        df = load_csv(uploaded_file)
-        df_info = get_csv_info(df)
+        try:
+            # Load and process the data
+            df = load_csv(uploaded_file)
+            if df.empty:
+                st.error("The uploaded CSV file is empty.")
+                return
+                
+            df_info = get_csv_info(df)
 
-        # Data preview in an expandable section
-        with st.expander("📋 View Raw Data", expanded=False):
-            st.dataframe(df, use_container_width=True)
+            # Data preview in an expandable section
+            with st.expander("📋 View Raw Data", expanded=False):
+                st.dataframe(df, use_container_width=True)
 
-        # Model selector and visualization
-        st.markdown('<p class="subheader-style">📈 Model Performance Analysis</p>', unsafe_allow_html=True)
-        
-        # Create two columns for model selection
-        select_col1, select_col2 = st.columns([2, 1])
-        
-        with select_col1:
-            selected_model = st.selectbox(
-                "Select a model to analyze:",
-                options=df['Model Name'].tolist(),
-                help="Choose a model to view its detailed performance metrics"
+            # Model selector and visualization
+            st.markdown('<p class="subheader-style">📈 Model Performance Analysis</p>', unsafe_allow_html=True)
+            
+            # Create two columns for model selection
+            select_col1, select_col2 = st.columns([2, 1])
+            
+            with select_col1:
+                selected_model = st.selectbox(
+                    "Select a model to analyze:",
+                    options=df['Model Name'].tolist(),
+                    help="Choose a model to view its detailed performance metrics"
+                )
+
+            # Display benchmark graph
+            fig = create_benchmark_graph(df, selected_model)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Question and Answer section
+            st.markdown('<p class="subheader-style">❓ Ask Questions</p>', unsafe_allow_html=True)
+            
+            question = st.text_input(
+                "Ask a question about the models:",
+                placeholder="e.g., 'Which model has the best MMLU score?' or 'Compare the math capabilities of different models'",
+                help="Ask any question about the models and their performance metrics"
             )
 
-        # Display benchmark graph
-        fig = create_benchmark_graph(df, selected_model)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Question and Answer section
-        st.markdown('<p class="subheader-style">❓ Ask Questions</p>', unsafe_allow_html=True)
-        
-        question = st.text_input(
-            "Ask a question about the models:",
-            placeholder="e.g., 'Which model has the best MMLU score?' or 'Compare the math capabilities of different models'",
-            help="Ask any question about the models and their performance metrics"
-        )
-
-        if question:
-            if not os.getenv("GROQ_API_KEY"):
-                st.error("⚠️ Please set your GROQ_API_KEY in the .env file")
-            else:
+            if question:
                 with st.spinner("🤔 Analyzing your question..."):
                     response = generate_response(question, df_info, df)
                     st.markdown(f"""
@@ -361,6 +371,11 @@ def main():
                             <p style='margin:0; white-space: pre-wrap;'>{response}</p>
                         </div>
                     """, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error processing the CSV file: {str(e)}")
+            st.info("Please make sure your CSV file has the required columns: 'Model Name' and performance metrics columns.")
+    else:
+        st.info("👆 Please upload a CSV file to begin the analysis.")
 
 if __name__ == "__main__":
     main()
