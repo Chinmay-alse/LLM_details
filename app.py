@@ -215,86 +215,48 @@ def create_benchmark_graph(df, selected_model):
 
     return fig
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def generate_response(question, df_info, df):
-    """Generate response using Groq API"""
-    
-    # Create a metrics dictionary for direct lookups
-    metrics_info = {
-        'MMLU': "Massive Multitask Language Understanding - Tests general knowledge and reasoning across multiple domains",
-        'GPQA': "General Purpose Question Answering - Measures model's ability to answer diverse questions accurately",
-        'HumanEval': "Evaluates code generation capabilities and programming skills",
-        'Math': "Assesses mathematical reasoning abilities and problem-solving skills",
-        'MMMU': "Massive Multitask Multimodal Understanding - Evaluates model's ability to understand and process multimodal tasks",
-        'MGSM': "Machine Generated Story Matching - Evaluates model's story understanding and generation capabilities",
-        'DocVQA': "Document Visual Question Answering - Tests ability to answer questions about documents with visual elements",
-        'Mathvista': "Assesses mathematical reasoning abilities with visual inputs and diagrams"
-    }
-    
-    # Check if the question is asking about a specific metric
-    for metric, description in metrics_info.items():
-        if metric.lower() in question.lower():
-            return f"{metric}: {description}"
-    
-    # If not asking about a specific metric, provide the full analysis
-    # Get model capabilities for better context
-    model_capabilities = []
-    for _, row in df.iterrows():
-        capabilities = get_model_capabilities(row)
-        if capabilities:
-            model_capabilities.append(f"{row['Model Name']}: {', '.join(capabilities)}")
-    
-    context = f"""
-    I have a CSV file containing AI model benchmarks with the following information:
-    
-    Columns: {df_info['columns']}
-    Number of rows: {df_info['rows']}
-    
-    Key Metrics Included:
-    - MMLU (Massive Multitask Language Understanding): Tests general knowledge and reasoning
-    - GPQA (General Purpose Question Answering): Measures question answering ability
-    - HumanEval: Evaluates code generation capabilities
-    - Math: Assesses mathematical reasoning abilities
-    - MMMU (Massive Multitask Multimodal Understanding): Evaluates model's ability to understand and process multimodal tasks
-    - MGSM (Machine Generated Story Matching): Evaluates model's story understanding and generation
-    - DocVQA (Document Visual Question Answering): Tests ability to answer questions about documents with visual elements
-    - Mathvista: Assesses mathematical reasoning with visual inputs
-    
-    Model Capabilities Summary:
-    {chr(10).join(model_capabilities)}
-    
-    Full Data:
-    {df_info['full_data']}
-    
-    Statistical Summary:
-    {df_info['summary']}
-    
-    Question: {question}
-    
-    Please provide a detailed analysis based on the data provided, considering the various benchmarks and their implications for model performance.
-    When comparing models, consider:
-    1. Overall performance across all metrics
-    2. Specialized strengths (e.g., math, coding, general knowledge, multimodal understanding)
-    3. Multimodal capabilities and MMMU performance
-    4. Best-suited use cases
-    """
-    
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": """You are an AI model analyst expert. For questions about specific metrics, provide concise, focused answers.
-                For comparison questions or general analysis, provide detailed responses considering multiple metrics."""
-            },
-            {
-                "role": "user",
-                "content": context
-            }
-        ],
-        model="mixtral-8x7b-32768",
-        temperature=0.1
-    )
-    
-    return chat_completion.choices[0].message.content
+    """Generate response using Groq API with caching and error handling"""
+    try:
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        
+        # Prepare the context
+        context = f"""
+        Dataset Information:
+        {df_info}
+        
+        Available Models and their metrics:
+        {df.to_string()}
+        """
+        
+        prompt = f"""You are an AI assistant analyzing model benchmark data. 
+        Based on the following data, please answer this question: {question}
+        
+        Context:
+        {context}
+        
+        Please provide a clear and concise answer based only on the data provided."""
+        
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="mixtral-8x7b-32768",
+            temperature=0.1,
+            max_tokens=1024,
+        )
+        
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        if "rate limit exceeded" in str(e).lower():
+            return ("⚠️ Rate limit exceeded. Please try again in a few minutes. " 
+                   "This can happen when there are too many requests in a short time.")
+        else:
+            return f"⚠️ Error generating response: {str(e)}"
 
 def main():
     # Load environment variables
@@ -366,11 +328,14 @@ def main():
             if question:
                 with st.spinner("🤔 Analyzing your question..."):
                     response = generate_response(question, df_info, df)
-                    st.markdown(f"""
-                        <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;'>
-                            <p style='margin:0; white-space: pre-wrap;'>{response}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    if "⚠️" in response:
+                        st.error(response)
+                    else:
+                        st.markdown(f"""
+                            <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;'>
+                                <p style='margin:0; white-space: pre-wrap;'>{response}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
         except Exception as e:
             st.error(f"Error processing the CSV file: {str(e)}")
             st.info("Please make sure your CSV file has the required columns: 'Model Name' and performance metrics columns.")
