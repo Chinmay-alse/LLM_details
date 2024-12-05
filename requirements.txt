@@ -1,4 +1,4 @@
-groq==0.3.2
+groq==0.13.0
 pandas==1.5.3
 python-dotenv==1.0.0
 streamlit==1.29.0
