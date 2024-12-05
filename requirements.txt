@@ -1,7 +1,9 @@
 groq==0.13.0
 pandas==1.5.3
-python-dotenv==1.0.0
-streamlit==1.29.0
-plotly==5.17.0
-numpy==1.24.3
+python-dotenv==0.21.1
+streamlit==1.24.0
+plotly==5.13.1
+numpy==1.23.5
 protobuf==3.20.0
+setuptools==65.5.1
+wheel==0.40.0
